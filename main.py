@@ -1,5 +1,5 @@
 from typing import Union
-
+from langchain.schema import Document
 from fastapi import FastAPI, File, UploadFile, Form
 import chromadb
 from langchain_community.document_loaders import PyMuPDFLoader
@@ -12,9 +12,11 @@ from openai import OpenAI
 from chromadb.utils import embedding_functions
 from fastapi.middleware.cors import CORSMiddleware
 import tempfile
-import pprint
+import boto3
 import os 
 from dotenv import load_dotenv
+import pdfplumber
+import io
 
 load_dotenv()
 
@@ -35,28 +37,41 @@ app.add_middleware(
 )
 client = chromadb.HttpClient(host='54.196.133.247', port=8000)
 # client.heartbeat()
+s3 = boto3.client("s3")
+BUCKET_NAME = "pdf-chat-bot-djn232db"
 
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
 
+
+
+def upload_to_s3_bucket(file: UploadFile = File(...)):
+    try:
+        # Upload the file to S3
+        s3.upload_fileobj(file.file, BUCKET_NAME, file.filename)
+        return {"message": f"File {file.filename} uploaded to S3 bucket {BUCKET_NAME}"}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post('/upload')
 async def upload_file(file: UploadFile = File(...)):
     try:
         
-        temp_dir = tempfile.gettempdir()
+        upload_to_s3_bucket(file)
+#         temp_dir = tempfile.gettempdir()
 
-# Define your custom filename
-        custom_filename = file.filename
+# # Define your custom filename
+#         custom_filename = file.filename
 
-        # Construct the full path
-        temp_file_path = os.path.join(temp_dir, custom_filename)
-        with open(temp_file_path, "wb") as temp_file:
-            temp_file.write(await file.read())
-            
-        print(temp_file_path)
-        # Process the PDF using read_pdf_content
-        process_file(temp_file_path)
+#         # Construct the full path
+#         temp_file_path = os.path.join(temp_dir, custom_filename)
+#         with open(temp_file_path, "wb") as temp_file:
+#             temp_file.write(await file.read())
+        
+#         print(temp_file_path)
+#         # Process the PDF using read_pdf_content
+        process_file(file.filename)
         
         
         
@@ -70,90 +85,97 @@ async def send_msg(history: str = Form(...), message: str = Form(...),file: Uplo
     print(message)
     try:
         history = eval(history)
-        temp_dir = tempfile.gettempdir()
 
-# Define your custom filename
-        custom_filename = file.filename
 
         # Construct the full path
-        temp_file_path = os.path.join(temp_dir, custom_filename)
         # with open(temp_file_path, "wb") as temp_file:
         #     temp_file.write(await file.read())
 
         # Process the PDF using read_pdf_content
         # print(temp_file_path, message, history)
-        history = chat_with_pdf(temp_file_path, message, history)
+        history = chat_with_pdf(file.filename, message, history)
         return {"message": "Processed successfully", "history": history}
     except Exception as e:
         print(f"Error: {str(e)}")
 
-def read_pdf_content(file_path):
-    if file_path is None:
-        return None 
+def read_pdf_content(file_name):
+    # if file_path is None:
+    #     return None 
     
-    loader  = PyMuPDFLoader(file_path)
-    documents = loader.load()
-    return documents
+    # loader  = PyMuPDFLoader(file_path)
+    # documents = loader.load()
+    # return documents
+    try:
+        # Get the PDF file from S3
+        response = s3.get_object(Bucket=BUCKET_NAME, Key=file_name)
+        pdf_content = response["Body"].read()
+
+        # Extract text using pdfplumber
+        with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
+            text = ""
+            for page in pdf.pages:
+                text += page.extract_text()
+
+        # Return the text as a Document object
+        # document = Document(page_content=text, metadata={"bucket": BUCKET_NAME, "key": file_name})
+        # print(document)
+        return text
+
+    except Exception as e:
+        print("Error reading PDF from S3:", e)
+        raise
 
 def chunk_document(documents):
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size = 800,
-        chunk_overlap = 80
-    )
-    chunks = text_splitter.split_documents(documents)
-    
-    ids = []
-    contents = []
-    for chunk in chunks:
-        chunk.id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk.page_content))
-        contents.append(chunk.page_content)
-        ids.append(chunk.id)
-    return contents, ids
+    try:
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size = 800,
+            chunk_overlap = 80
+        )
+        chunks = text_splitter.split_text(documents)
+        # print(chunks)
+        ids = []
+        contents = []
+        for chunk in chunks:
+            id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk))
+            contents.append(chunk)
+            ids.append(id)
+        return contents, ids
+    except Exception as e:
+        print("Error splitting documents:", e)
+        raise
 
-def get_or_create_vectorstore(file_path:str):
-    file_name = file_path.split("\\")[-1]
-    print(file_name)
-    # vectorstore = Chroma(
-    #     persist_directory= './data',
-    #     collection_name = file_name, 
-    #     embedding_function= SentenceTransformerEmbeddings(model_name = "all-MiniLM-L6-v2")
-    # )
+def get_or_create_vectorstore(file_name:str):
     
- 
-# client.delete_collection(name=COLLECTION_NAME)
     collection = client.get_or_create_collection(name= file_name , embedding_function=embedding_functions.DefaultEmbeddingFunction())
     
     return collection
 
 
-def process_file(file_path):
-    if file_path is None:
+def process_file(file_name):
+    if file_name is None:
         return None
     
-    documents = read_pdf_content(file_path)
+    documents = read_pdf_content(file_name)
     
     if not documents:
         return None 
     
     chunks,ids = chunk_document(documents)
     print(chunks)
-    collection = get_or_create_vectorstore(file_path)
-    print()
+    collection = get_or_create_vectorstore(file_name)
+    # print()
     collection.add(
         documents=chunks, 
         ids = ids)
 
 
-def chat_with_pdf(file_path, message, history):
+def chat_with_pdf(file_name, message, history):
     if not message:
         return history
         
     try:
-   
-        
-        
-        collection = get_or_create_vectorstore(file_path)
-        collection = client.get_collection(name = file_path.split("\\")[-1])
+        collection = get_or_create_vectorstore(file_name)
+        collection = client.get_collection(name = file_name)
         results = collection.query(query_texts = [message], n_results =3)
         if not results:
             history.append({
