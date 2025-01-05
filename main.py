@@ -161,7 +161,7 @@ def process_file(file_name):
         return None 
     
     chunks,ids = chunk_document(documents)
-    print(chunks)
+    # print(chunks)
     collection = get_or_create_vectorstore(file_name)
     # print()
     collection.add(
@@ -184,7 +184,7 @@ def chat_with_pdf(file_name, message, history):
             })
             return history 
         
-        print(results)
+        # print(results)
         CONTEXT = ""
         for document in results["documents"]:
             CONTEXT += str(document) + "\n\n"
@@ -199,7 +199,7 @@ def chat_with_pdf(file_name, message, history):
         
         """
 
-        print(prompt)
+        # print(prompt)
         
         response = open_ai_client.chat.completions.create(
             model = "gpt-4o-mini",
