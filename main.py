@@ -35,7 +35,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-client = chromadb.HttpClient(host='54.196.133.247', port=8000)
+client = chromadb.HttpClient(host='54.209.240.40', port=8000)
 # client.heartbeat()
 s3 = boto3.client("s3")
 BUCKET_NAME = "pdf-chat-bot-djn232db"
@@ -72,7 +72,7 @@ async def upload_file(file: UploadFile = File(...)):
 #         print(temp_file_path)
 #         # Process the PDF using read_pdf_content
         process_file(file.filename)
-        
+        return {"message": "Processed successfully"}
         
         
         # pprint.pprint(documents[0].page_content)
