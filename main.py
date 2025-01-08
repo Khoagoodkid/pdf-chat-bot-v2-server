@@ -193,6 +193,7 @@ def chat_with_pdf(file_name, message, history):
             Use the following CONTEXT to answer the QUESTION at the end.
             if you don't know the answer or unsure of the answer, just say that you don't know, don't try to make up an answer.
             Use an unbiased and journalistic tone.
+            Use the language that user speaks (if they speak Vietnamese, use Vietnamese)
             
             CONTEXT: {CONTEXT}
             QUESTION: {message}
