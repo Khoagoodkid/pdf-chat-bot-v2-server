@@ -49,6 +49,8 @@ def read_root():
 def upload_to_s3_bucket(file: UploadFile = File(...)):
     try:
         # Upload the file to S3
+        file.filename = file.filename.replace(" ", "_")
+        
         s3.upload_fileobj(file.file, BUCKET_NAME, file.filename)
         return {"message": f"File {file.filename} uploaded to S3 bucket {BUCKET_NAME}"}
     except Exception as e:
@@ -71,6 +73,7 @@ async def upload_file(file: UploadFile = File(...)):
         
 #         print(temp_file_path)
 #         # Process the PDF using read_pdf_content
+        file.filename = file.filename.replace(" ", "_")
         process_file(file.filename)
         return {"message": "Processed successfully"}
         
@@ -93,6 +96,7 @@ async def send_msg(history: str = Form(...), message: str = Form(...),file: Uplo
 
         # Process the PDF using read_pdf_content
         # print(temp_file_path, message, history)
+        file.filename = file.filename.replace(" ", "_")
         history = chat_with_pdf(file.filename, message, history)
         return {"message": "Processed successfully", "history": history}
     except Exception as e:
@@ -146,6 +150,7 @@ def chunk_document(documents):
 
 def get_or_create_vectorstore(file_name:str):
     
+
     collection = client.get_or_create_collection(name= file_name , embedding_function=embedding_functions.DefaultEmbeddingFunction())
     
     return collection
